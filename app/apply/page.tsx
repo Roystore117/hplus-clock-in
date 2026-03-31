@@ -11,6 +11,7 @@ function ApplyForm() {
   const searchParams = useSearchParams();
   const employeeId = searchParams.get("employeeId") ?? "";
   const name = searchParams.get("name") ?? "";
+  const checkoutTime = searchParams.get("checkoutTime") ?? "";
 
   const [punches, setPunches] = useState<PunchRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,9 +31,11 @@ function ApplyForm() {
       .catch(() => setLoading(false));
   }, [employeeId]);
 
-  // 出勤：最早、退勤：最遅（ascending sort済みなので先頭/末尾）
+  // 出勤：最早（Notionクエリから）、退勤：URLパラメーターを優先（レースコンディション回避）
   const checkIn  = punches.find((p) => p.type === "出勤");
-  const checkOut = [...punches].reverse().find((p) => p.type === "退勤");
+  const checkOut = checkoutTime
+    ? { type: "退勤" as const, timeStr: checkoutTime }
+    : [...punches].reverse().find((p) => p.type === "退勤");
 
   const canSubmit = !submitting &&
     ((earlyCheck && earlyReason.trim() !== "") ||
