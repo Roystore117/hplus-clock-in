@@ -347,7 +347,7 @@ export async function registerTimestamp(
   } else {
     // 退勤: 終業標準時刻より後 → 終業標準時刻にキャップ
     const [STANDARD_END_HOUR, STANDARD_END_MIN] = (standardEndTime ?? "18:00").split(":").map(Number);
-    if (jstH > STANDARD_END_HOUR || (jstH === STANDARD_END_HOUR && jstM > STANDARD_END_MIN)) {
+    if (jstH > STANDARD_END_HOUR || (jstH === STANDARD_END_HOUR && jstM >= STANDARD_END_MIN)) {
       payrollUTC = new Date(jstMidnightUTC + STANDARD_END_HOUR * 3600000 + STANDARD_END_MIN * 60000);
     }
   }
