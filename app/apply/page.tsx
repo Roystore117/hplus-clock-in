@@ -105,7 +105,7 @@ function ApplyForm() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
         className="bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.06)] overflow-hidden flex flex-col"
-        style={{ maxHeight: "calc(100dvh - 80px)", maxHeight: "calc(100svh - 80px)" }}
+        style={{ maxHeight: "calc(100svh - 80px)" }}
       >
         {/* ヘッダー */}
         <div className="flex items-center px-6 pt-6 pb-4 border-b border-gray-100 shrink-0">
