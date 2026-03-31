@@ -250,6 +250,7 @@ export async function getTodayPunches(employeeId: string): Promise<PunchRecord[]
         { property: "実打刻", date: { before: nextMidnightUTC.toISOString() } },
       ],
     },
+    sorts: [{ property: "実打刻", direction: "ascending" }],
   });
 
   const pad = (n: number) => String(n).padStart(2, "0");

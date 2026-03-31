@@ -30,8 +30,9 @@ function ApplyForm() {
       .catch(() => setLoading(false));
   }, [employeeId]);
 
+  // 出勤：最早、退勤：最遅（ascending sort済みなので先頭/末尾）
   const checkIn  = punches.find((p) => p.type === "出勤");
-  const checkOut = punches.find((p) => p.type === "退勤");
+  const checkOut = [...punches].reverse().find((p) => p.type === "退勤");
 
   const canSubmit = !submitting &&
     ((earlyCheck && earlyReason.trim() !== "") ||
