@@ -79,7 +79,7 @@ export default function AdminPage() {
   const [editEmp, setEditEmp] = useState<EmployeeAdmin | null>(null);
   const [editName, setEditName] = useState("");
   const [editEmpId, setEditEmpId] = useState("");
-  const [editStatus, setEditStatus] = useState("在籍");
+  const [editStatus, setEditStatus] = useState("在職");
 
   // ── データ取得 ────────────────────────────
   useEffect(() => {
@@ -151,7 +151,7 @@ export default function AdminPage() {
       .filter((n) => !isNaN(n));
     const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
     const nextId = "H" + String(next).padStart(4, "0");
-    setEditEmp(null); setEditName(""); setEditEmpId(nextId); setEditStatus("在籍");
+    setEditEmp(null); setEditName(""); setEditEmpId(nextId); setEditStatus("在職");
     setSaveError(""); setModalMode("emp-new");
   };
   const saveEmp = async () => {
@@ -375,8 +375,8 @@ export default function AdminPage() {
                   />
                 </div>
                 <div className="flex items-center justify-between mb-6">
-                  <span className="text-sm text-gray-500">在籍中</span>
-                  <Toggle value={editStatus !== "退職"} onChange={() => setEditStatus((s) => s === "退職" ? "在籍" : "退職")} />
+                  <span className="text-sm text-gray-500">在職中</span>
+                  <Toggle value={editStatus !== "退職"} onChange={() => setEditStatus((s) => s === "退職" ? "在職" : "退職")} />
                 </div>
                 {saveError && <p className="text-xs text-red-400 text-center mb-3">{saveError}</p>}
                 <div className="flex gap-2">
