@@ -145,7 +145,13 @@ export default function AdminPage() {
     setEditStatus(emp.status); setSaveError(""); setModalMode("emp-edit");
   };
   const openEmpNew = () => {
-    setEditEmp(null); setEditName(""); setEditEmpId(""); setEditStatus("在籍");
+    // 既存IDから次の番号を自動生成（例: H0004 → H0005）
+    const nums = employees
+      .map((e) => parseInt(e.employeeId.replace(/\D/g, ""), 10))
+      .filter((n) => !isNaN(n));
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    const nextId = "H" + String(next).padStart(4, "0");
+    setEditEmp(null); setEditName(""); setEditEmpId(nextId); setEditStatus("在籍");
     setSaveError(""); setModalMode("emp-new");
   };
   const saveEmp = async () => {
@@ -352,7 +358,7 @@ export default function AdminPage() {
                   <div className="mb-3">
                     <label className="block text-xs text-gray-400 mb-1">従業員ID</label>
                     <input
-                      type="number"
+                      type="text"
                       value={editEmpId}
                       onChange={(e) => setEditEmpId(e.target.value)}
                       className="w-full px-4 py-3 text-sm rounded-2xl border-2 border-gray-100 bg-gray-50 focus:outline-none focus:border-clock-blue/50 transition-colors"
