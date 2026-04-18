@@ -131,6 +131,44 @@ export default function AdminPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("monthly");
 
+  // ── 認証 ─────────────────────────────────
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/auth/check")
+      .then((r) => {
+        if (r.ok) setAuthenticated(true);
+      })
+      .catch(() => {})
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  const handleLogin = async () => {
+    setLoginSubmitting(true);
+    setLoginError("");
+    try {
+      const res = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: loginPassword }),
+      });
+      if (res.ok) {
+        setAuthenticated(true);
+        setLoginPassword("");
+      } else {
+        setLoginError("パスワードが違います");
+      }
+    } catch {
+      setLoginError("通信エラーが発生しました");
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
   // ── 保健師の一言 ──────────────────────────
   const [tips, setTips] = useState<Tip[]>([]);
   const [tipsLoading, setTipsLoading] = useState(false);
@@ -531,6 +569,60 @@ export default function AdminPage() {
       )}
     </>
   );
+
+  // 認証チェック中
+  if (!authChecked) {
+    return (
+      <main className="h-[100dvh] flex items-center justify-center bg-[#f7f9fa]">
+        <div className="flex flex-col items-center gap-3">
+          <svg className="w-7 h-7 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+        </div>
+      </main>
+    );
+  }
+
+  // 未認証：ログインモーダル
+  if (!authenticated) {
+    return (
+      <main className="h-[100dvh] flex items-center justify-center bg-[#f7f9fa] px-4">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          className="bg-white rounded-3xl px-6 py-6 w-full max-w-[360px] shadow-xl"
+        >
+          <p className="text-[10px] font-bold text-gray-300 tracking-[0.25em] uppercase mb-1 text-center">Admin</p>
+          <p className="text-base font-extrabold text-gray-700 text-center mb-5">管理者ログイン</p>
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
+            placeholder="パスワード"
+            autoFocus
+            className="w-full px-4 py-3 text-sm rounded-2xl border-2 border-gray-100 bg-slate-50 focus:outline-none focus:border-clock-blue/50 transition-colors mb-3"
+          />
+          {loginError && <p className="text-xs text-red-400 text-center mb-3">{loginError}</p>}
+          <button
+            onClick={handleLogin}
+            disabled={loginSubmitting || !loginPassword}
+            className="w-full py-3 text-sm font-bold text-white bg-clock-blue rounded-2xl disabled:opacity-50 hover:bg-clock-blue/90 transition-colors"
+          >
+            {loginSubmitting ? "確認中..." : "ログイン"}
+          </button>
+          <button
+            onClick={() => router.push("/")}
+            className="w-full mt-3 py-2 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            ← トップに戻る
+          </button>
+        </motion.div>
+      </main>
+    );
+  }
 
   return (
     <main className="h-[100dvh] flex bg-[#f7f9fa] overflow-hidden">

@@ -11,9 +11,9 @@ export async function adminFetch(
   try {
     const res = await fetch(url, options);
 
-    // 403 は認証切れ。リトライ不要でログインへ
+    // 403 は認証切れ。リトライ不要で /admin にリロード（ログインモーダルが表示される）
     if (res.status === 403) {
-      window.location.href = "/admin/login";
+      window.location.href = "/admin";
       throw new Error("Unauthorized");
     }
 
