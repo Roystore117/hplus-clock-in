@@ -23,8 +23,8 @@ export async function PATCH(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const { id, startTime, endTime, deemedOvertimeHours, alertThreshold } = await req.json();
-    await updatePayrollSettings(id, { startTime, endTime, deemedOvertimeHours, alertThreshold });
+    const { id, startTime, endTime, breakHours, deemedOvertimeHours, alertThreshold } = await req.json();
+    await updatePayrollSettings(id, { startTime, endTime, breakHours, deemedOvertimeHours, alertThreshold });
     return NextResponse.json({ success: true });
   } catch (e: any) {
     const detail = e?.body ?? e?.message ?? String(e);

@@ -22,6 +22,7 @@ type MonthlyRecord = {
   workStatus: string;
   note: string;
   approved: boolean;
+  requestStatus: "" | "承認待ち" | "承認済";
 };
 
 export default function MonthlySummary() {
@@ -164,7 +165,7 @@ export default function MonthlySummary() {
     const pad = (n: number) => String(n).padStart(2, "0");
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    const headers = ["日付", "出勤", "退勤", "休憩", "実働", "勤務状態", "備考", "承認"];
+    const headers = ["日付", "出勤", "退勤", "休憩", "実働", "勤務状態", "備考"];
     const rows = Array.from({ length: daysInMonth }, (_, i) => {
       const d = i + 1;
       const dow = new Date(year, month - 1, d).getDay();
@@ -178,7 +179,6 @@ export default function MonthlySummary() {
         rec?.actualHours != null ? rec.actualHours.toFixed(1) : "",
         rec?.workStatus || "",
         rec?.note || "",
-        rec?.approved ? "✓" : "",
       ];
     });
 
@@ -198,6 +198,22 @@ export default function MonthlySummary() {
 
   const totalHours = records.reduce((sum, r) => sum + (r.actualHours ?? 0), 0);
   const totalDays = records.filter((r) => r.clockIn).length;
+  const paidLeaveCount = records.filter((r) => r.workStatus === "有給").length;
+
+  // 公休数 = 公休レコード数 + 定休日数（定休曜日かつレコードが無い日）
+  const recordedDates = new Set(records.map((r) => r.date));
+  let closingDayCount = 0;
+  if (storeClosingDay !== null) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    for (let d = 1; d <= daysInMonth; d++) {
+      if (new Date(year, month - 1, d).getDay() === storeClosingDay) {
+        const dateStr = `${year}-${pad(month)}-${pad(d)}`;
+        if (!recordedDates.has(dateStr)) closingDayCount++;
+      }
+    }
+  }
+  const holidayCount = records.filter((r) => r.workStatus === "公休").length + closingDayCount;
 
   if (empError) {
     return (
@@ -408,14 +424,10 @@ export default function MonthlySummary() {
                               {rec.clockOut || "—"}
                             </span>
                           ) : <span className="text-gray-200 text-xs">—</span>}
-                          {/* 休憩 */}
-                          {rec ? isEditing("break") ? (
-                            <input {...inputProps("break")} placeholder="2.5" />
-                          ) : (
-                            <span onClick={() => startEdit("break", rec.break)} className={`text-xs tabular-nums cursor-pointer hover:text-clock-blue transition-colors ${rec.break ? "text-gray-500" : "text-gray-200"}`}>
-                              {rec.break || "—"}
-                            </span>
-                          ) : <span className="text-gray-200 text-xs">—</span>}
+                          {/* 休憩（編集不可・店舗別設定で管理） */}
+                          <span className={`text-xs tabular-nums ${rec?.break ? "text-gray-500" : "text-gray-200"}`}>
+                            {rec?.break || "—"}
+                          </span>
                           {/* 実働（編集不可・formula） */}
                           <span className={`text-xs tabular-nums ${rec?.actualHours != null ? "text-gray-600 font-medium" : "text-gray-200"}`}>
                             {rec?.actualHours != null ? rec.actualHours.toFixed(1) : "—"}
@@ -440,12 +452,12 @@ export default function MonthlySummary() {
                               {rec.note || "—"}
                             </span>
                           ) : <span className="text-gray-200 text-xs">—</span>}
-                          {/* 承認（編集不可） */}
+                          {/* 承認（時間外申請ステータス・編集不可） */}
                           <span className="text-xs">
-                            {rec ? (
-                              rec.approved
-                                ? <span className="text-clock-blue font-bold">✓</span>
-                                : <span className="text-gray-200">—</span>
+                            {rec?.requestStatus === "承認済" ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-clock-blue">承認済</span>
+                            ) : rec?.requestStatus === "承認待ち" ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-gray-500">承認待ち</span>
                             ) : (
                               <span className="text-gray-200">—</span>
                             )}
@@ -485,6 +497,8 @@ export default function MonthlySummary() {
               {[
                 { label: "合計出勤日数", value: `${totalDays}日` },
                 { label: "合計実働時間", value: `${totalHours.toFixed(1)}h` },
+                { label: "公休数",       value: `${holidayCount}日` },
+                { label: "有給数",       value: `${paidLeaveCount}日` },
               ].map(({ label, value }) => (
                 <div key={label} className="flex flex-col gap-0.5 items-end">
                   <p className="text-[10px] text-gray-300 tracking-wide">{label}</p>

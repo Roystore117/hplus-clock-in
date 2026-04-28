@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createHolidayRecord, deleteHolidayRecord, getMonthHolidayRecords } from "@/lib/notion";
-
-async function auth() {
-  const cookieStore = await cookies();
-  return cookieStore.get("admin_token")?.value === process.env.ADMIN_PASSWORD;
-}
+import { isAdminAuthenticated } from "@/lib/adminAuth";
 
 // 指定月の公休・有給一覧取得
 export async function GET(req: NextRequest) {
-  if (!await auth()) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  if (!(await isAdminAuthenticated())) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year"));
   const month = Number(searchParams.get("month"));
@@ -23,7 +18,7 @@ export async function GET(req: NextRequest) {
 
 // 公休登録
 export async function POST(req: NextRequest) {
-  if (!await auth()) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  if (!(await isAdminAuthenticated())) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   const { employeePageId, employeeName, date, type } = await req.json();
   if (!employeePageId || !employeeName || !date) {
     return NextResponse.json({ error: "Bad Request" }, { status: 400 });
@@ -39,7 +34,7 @@ export async function POST(req: NextRequest) {
 
 // 公休削除
 export async function DELETE(req: NextRequest) {
-  if (!await auth()) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  if (!(await isAdminAuthenticated())) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   const { pageId } = await req.json();
   if (!pageId) return NextResponse.json({ error: "Bad Request" }, { status: 400 });
   try {

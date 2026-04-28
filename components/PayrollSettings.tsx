@@ -9,6 +9,7 @@ type Settings = {
   id: string;
   startTime: string;
   endTime: string;
+  breakHours: number;
   deemedOvertimeHours: number;
   alertThreshold: number;
 };
@@ -17,21 +18,29 @@ const DEFAULT_SETTINGS: Settings = {
   id: "",
   startTime: "09:00",
   endTime: "18:00",
+  breakHours: 2.5,
   deemedOvertimeHours: 30,
   alertThreshold: 80,
 };
 
 type FieldConfig =
   | { type: "time"; key: keyof Settings; label: string; unit?: string }
-  | { type: "number"; key: keyof Settings; label: string; unit: string; min: number; max: number };
+  | { type: "number"; key: keyof Settings; label: string; unit: string; min: number; max: number; step?: number };
 
 const FIELDS: { section: string; desc: string; items: FieldConfig[] }[] = [
   {
     section: "所定労働時間",
-    desc: "給与計算打刻に使用する標準時刻を設定します",
+    desc: "給与計算用打刻に使用する標準時刻を設定します",
     items: [
       { type: "time", key: "startTime", label: "始業標準時刻" },
       { type: "time", key: "endTime",   label: "終業標準時刻" },
+    ],
+  },
+  {
+    section: "休憩時間",
+    desc: "退勤打刻時に勤怠ログの「休憩」欄に書き込まれる時間です",
+    items: [
+      { type: "number", key: "breakHours", label: "休憩時間", unit: "時間", min: 0, max: 8, step: 0.1 },
     ],
   },
   {
@@ -184,7 +193,7 @@ export default function PayrollSettings() {
                             onBlur={commitEdit}
                             onKeyDown={(e) => e.key === "Enter" && commitEdit()}
                             autoFocus
-                            {...(item.type === "number" ? { min: item.min, max: item.max } : {})}
+                            {...(item.type === "number" ? { min: item.min, max: item.max, step: item.step ?? 1 } : {})}
                             className="w-24 px-2 py-1 text-sm text-right rounded-lg border-2 border-clock-blue/40 bg-white focus:outline-none"
                           />
                           {item.unit && <span className="text-xs text-gray-400">{item.unit}</span>}

@@ -8,9 +8,10 @@ import PayrollSettings from "@/components/PayrollSettings";
 import CareerSettings from "@/components/CareerSettings";
 import MonthlySummary from "@/components/MonthlySummary";
 import HolidaySettings from "@/components/HolidaySettings";
+import OvertimeRequests from "@/components/OvertimeRequests";
 import DebugSettings from "@/components/DebugSettings";
 
-type Tab = "monthly" | "holiday" | "career" | "payroll" | "employees" | "tips" | "debug";
+type Tab = "monthly" | "holiday" | "overtime" | "career" | "payroll" | "employees" | "tips" | "debug";
 
 type Tip = {
   id: string;
@@ -60,6 +61,16 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
         <rect x="3" y="4" width="18" height="18" rx="2" />
         <path d="M16 2v4M8 2v4M3 10h18" />
         <path d="M8 14h.01M12 14h.01M8 18h.01M12 18h.01" />
+      </svg>
+    ),
+  },
+  {
+    id: "overtime",
+    label: "申請対応",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 12l2 2 4-4" />
+        <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64" />
       </svg>
     ),
   },
@@ -138,14 +149,31 @@ export default function AdminPage() {
   const [loginError, setLoginError] = useState("");
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
+  // ── 申請対応の未対応件数（左メニューバッジ用） ──
+  const [pendingOvertimeCount, setPendingOvertimeCount] = useState<number | null>(null);
+  const refreshPendingOvertime = () => {
+    adminFetch("/api/admin/overtime-requests?status=未対応")
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error()))
+      .then((data: unknown[]) => setPendingOvertimeCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetch("/api/admin/auth/check")
       .then((r) => {
-        if (r.ok) setAuthenticated(true);
+        if (r.ok) {
+          setAuthenticated(true);
+          refreshPendingOvertime();
+        }
       })
       .catch(() => {})
       .finally(() => setAuthChecked(true));
   }, []);
+
+  // タブ切替時に未対応件数を再取得（別端末からの新規申請を反映）
+  useEffect(() => {
+    if (authenticated) refreshPendingOvertime();
+  }, [activeTab, authenticated]);
 
   const handleLogin = async () => {
     setLoginSubmitting(true);
@@ -350,6 +378,7 @@ export default function AdminPage() {
     <>
       {activeTab === "monthly" && <MonthlySummary />}
       {activeTab === "holiday" && <HolidaySettings />}
+      {activeTab === "overtime" && <OvertimeRequests onActionDone={refreshPendingOvertime} />}
       {activeTab === "career" && <CareerSettings />}
       {activeTab === "payroll" && <PayrollSettings />}
       {activeTab === "debug" && <DebugSettings />}
@@ -650,7 +679,12 @@ export default function AdminPage() {
               <span className={`shrink-0 transition-colors ${activeTab === tab.id ? "text-clock-blue" : "text-gray-300"}`}>
                 {tab.icon}
               </span>
-              {tab.label}
+              <span className="flex-1 text-left">{tab.label}</span>
+              {tab.id === "overtime" && pendingOvertimeCount != null && pendingOvertimeCount > 0 && (
+                <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-clock-blue text-white tabular-nums">
+                  {pendingOvertimeCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>

@@ -137,7 +137,11 @@ export default function HolidaySettings() {
     else setMonth((m) => m + 1);
   };
 
-  const isNextDisabled = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+  // 現在月の3ヶ月先までナビゲート可能（公休・有給の先行設定のため）
+  const maxDate = new Date(now.getFullYear(), now.getMonth() + 3, 1);
+  const maxYear = maxDate.getFullYear();
+  const maxMonth = maxDate.getMonth() + 1;
+  const isNextDisabled = year > maxYear || (year === maxYear && month >= maxMonth);
 
   const handleStoreChange = (store: string) => {
     setSelectedStore(store);

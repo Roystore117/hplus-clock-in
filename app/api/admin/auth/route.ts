@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { buildAdminToken } from "@/lib/adminAuth";
 
 export async function POST(req: NextRequest) {
   const { password } = await req.json();
@@ -8,7 +9,7 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("admin_token", process.env.ADMIN_PASSWORD!, {
+  res.cookies.set("admin_token", buildAdminToken(), {
     httpOnly: true,
     sameSite: "strict",
     path: "/",

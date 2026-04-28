@@ -30,8 +30,10 @@ const F = {
   TITLE: "タイトル",
   EMPLOYEE_REL: "②従業員マスタDB_RM03P",
   DATE: "日付",
-  CLOCK_IN: "出勤",
-  CLOCK_OUT: "退勤",
+  CLOCK_IN: "実打刻出勤",
+  CLOCK_OUT: "実打刻退勤",
+  PAYROLL_CLOCK_IN: "給与計算用出勤",
+  PAYROLL_CLOCK_OUT: "給与計算用退勤",
   BREAK: "休憩",
   ACTUAL_HOURS: "実働",
   WORK_STATUS: "勤務状態",
@@ -42,13 +44,14 @@ const F = {
   CLOSING_DAY: "定休曜日",
   WORK_START: "始業標準時刻",
   WORK_END: "終業標準時刻",
+  BREAK_HOURS: "休憩時間",
   OVERTIME_HOURS: "みなし残業時間",
   ALERT_THRESHOLD: "アラート閾値",
   // ── 保健師の一言DB ────────────────
   TIP_TEXT: "一言",
   TIP_ENABLED: "有効",
   // ── 時間外申請DB ───────────────────
-  EMPLOYEE_NAME: "従業員名",
+  OVERTIME_EMPLOYEE_REL: "従業員",
   APPLY_DATE: "申請日",
   EARLY_REQUEST: "早出申請",
   EARLY_TIME: "早出時刻",
@@ -150,20 +153,40 @@ export async function getAllEmployees(): Promise<Employee[]> {
 }
 
 /**
- * 給与計算用の丸め処理
- * - 打刻時刻を「時間の切り上げ」に丸める
- *   例: 8:20 → 9:00 / 9:00 → 9:00（ちょうどはそのまま）
+ * 給与計算用の打刻丸め処理
+ * - 出勤：標準始業より早ければ標準始業に、それ以外は実打刻のまま
+ * - 退勤：標準終業より遅ければ標準終業に、それ以外は実打刻のまま
+ *
+ * 標準時刻は "HH:MM" の文字列。実打刻と同じ日付（JST）の標準時刻として合成する。
+ * 標準時刻文字列が空・不正なら丸めなし（=実打刻をそのまま返す）。
  */
-export function roundUpToHour(date: Date): Date {
-  const rounded = new Date(date);
-  if (rounded.getMinutes() === 0 && rounded.getSeconds() === 0) {
-    return rounded; // すでに正時ならそのまま
-  }
-  rounded.setHours(rounded.getHours() + 1);
-  rounded.setMinutes(0);
-  rounded.setSeconds(0);
-  rounded.setMilliseconds(0);
-  return rounded;
+function buildStandardJstDate(actual: Date, hhmm: string): Date | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (Number.isNaN(h) || Number.isNaN(min)) return null;
+  // JSTでの「実打刻と同じ日付」の HH:MM を作る
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const jstActual = new Date(actual.getTime() + JST_OFFSET_MS);
+  const y = jstActual.getUTCFullYear();
+  const mo = jstActual.getUTCMonth();
+  const d = jstActual.getUTCDate();
+  // UTC上で y/mo/d の H:min を作り、JST分を引いてUTCに戻す
+  const standardUtcMs = Date.UTC(y, mo, d, h, min, 0, 0) - JST_OFFSET_MS;
+  return new Date(standardUtcMs);
+}
+
+export function roundClockIn(actual: Date, standardStartHHMM: string): Date {
+  const std = buildStandardJstDate(actual, standardStartHHMM);
+  if (!std) return actual;
+  return actual < std ? std : actual;
+}
+
+export function roundClockOut(actual: Date, standardEndHHMM: string): Date {
+  const std = buildStandardJstDate(actual, standardEndHHMM);
+  if (!std) return actual;
+  return actual > std ? std : actual;
 }
 
 /** 従業員マスタを全件取得（管理者画面用・退職者含む） */
@@ -388,6 +411,7 @@ export type PayrollSettings = {
   id: string;
   startTime: string;        // "HH:MM"
   endTime: string;          // "HH:MM"
+  breakHours: number;       // 退勤打刻時に書き込む休憩時間（h）
   deemedOvertimeHours: number;
   alertThreshold: number;
 };
@@ -395,6 +419,7 @@ export type PayrollSettings = {
 const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, "id"> = {
   startTime: "09:00",
   endTime: "18:00",
+  breakHours: 2.5,
   deemedOvertimeHours: 30,
   alertThreshold: 80,
 };
@@ -407,6 +432,7 @@ export async function getPayrollSettings(pageId: string): Promise<PayrollSetting
       id: page.id,
       startTime:            page.properties[F.WORK_START]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.startTime,
       endTime:              page.properties[F.WORK_END]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.endTime,
+      breakHours:           page.properties[F.BREAK_HOURS]?.number     ?? PAYROLL_SETTINGS_DEFAULTS.breakHours,
       deemedOvertimeHours:  page.properties[F.OVERTIME_HOURS]?.number ?? PAYROLL_SETTINGS_DEFAULTS.deemedOvertimeHours,
       alertThreshold:       page.properties[F.ALERT_THRESHOLD]?.number   ?? PAYROLL_SETTINGS_DEFAULTS.alertThreshold,
     };
@@ -425,6 +451,7 @@ export async function updatePayrollSettings(
     properties: {
       [F.WORK_START]:      { rich_text: [{ text: { content: settings.startTime } }] },
       [F.WORK_END]:        { rich_text: [{ text: { content: settings.endTime } }] },
+      [F.BREAK_HOURS]:     { number: settings.breakHours },
       [F.OVERTIME_HOURS]:  { number: settings.deemedOvertimeHours },
       [F.ALERT_THRESHOLD]: { number: settings.alertThreshold },
     },
@@ -470,9 +497,141 @@ export async function getTodayPunches(employeeId: string): Promise<PunchRecord[]
   return results;
 }
 
+export type OvertimeRequest = {
+  id: string;
+  employeeId: string;       // 従業員リレーションのID
+  employeeName: string;     // 表示用に従業員マスタから取得した姓+名
+  applyDate: string;        // "YYYY-MM-DD"
+  earlyArrival: boolean;
+  earlyTime: string;
+  earlyReason: string;
+  overtime: boolean;
+  overtimeTime: string;
+  overtimeReason: string;
+  status: string;           // "未対応" | "承認済み" | "却下"
+};
+
+/**
+ * 指定の条件で時間外申請を取得（管理画面用）
+ * status: 未指定なら全件、指定すればそのステータスのみ
+ * 従業員マスタを引いて表示用の名前も付与する
+ */
+export async function getOvertimeRequests(filter?: {
+  status?: string;
+}): Promise<OvertimeRequest[]> {
+  const queryFilter = filter?.status
+    ? { property: F.STATUS, status: { equals: filter.status } }
+    : undefined;
+
+  const response = await notion.databases.query({
+    database_id: process.env.OVERTIME_REQUEST_DB_ID!,
+    ...(queryFilter ? { filter: queryFilter } : {}),
+    sorts: [{ property: F.APPLY_DATE, direction: "descending" }],
+  });
+
+  // 従業員IDを集めて従業員マスタから名前マップを構築
+  const empIds = new Set<string>();
+  for (const p of response.results as any[]) {
+    const id = p.properties[F.OVERTIME_EMPLOYEE_REL]?.relation?.[0]?.id;
+    if (id) empIds.add(id);
+  }
+  const idToName = new Map<string, string>();
+  if (empIds.size > 0) {
+    const empResponse = await notion.databases.query({
+      database_id: process.env.EMPLOYEE_DB_ID!,
+    });
+    for (const p of empResponse.results as any[]) {
+      if (!empIds.has(p.id)) continue;
+      const last  = p.properties[F.LAST_NAME]?.rich_text?.[0]?.text?.content ?? "";
+      const first = p.properties[F.FIRST_NAME]?.rich_text?.[0]?.text?.content ?? "";
+      idToName.set(p.id, [last, first].filter(Boolean).join(" "));
+    }
+  }
+
+  return (response.results as any[]).flatMap((page) => {
+    try {
+      const employeeId = page.properties[F.OVERTIME_EMPLOYEE_REL]?.relation?.[0]?.id ?? "";
+      return [{
+        id: page.id,
+        employeeId,
+        employeeName:    idToName.get(employeeId) ?? "",
+        applyDate:       page.properties[F.APPLY_DATE]?.date?.start ?? "",
+        earlyArrival:    page.properties[F.EARLY_REQUEST]?.checkbox ?? false,
+        earlyTime:       page.properties[F.EARLY_TIME]?.rich_text?.[0]?.text?.content ?? "",
+        earlyReason:     page.properties[F.EARLY_REASON]?.rich_text?.[0]?.text?.content ?? "",
+        overtime:        page.properties[F.OVERTIME_REQUEST]?.checkbox ?? false,
+        overtimeTime:    page.properties[F.OVERTIME_TIME]?.rich_text?.[0]?.text?.content ?? "",
+        overtimeReason:  page.properties[F.OVERTIME_REASON]?.rich_text?.[0]?.text?.content ?? "",
+        status:          page.properties[F.STATUS]?.status?.name ?? "未対応",
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * 時間外申請を承認
+ * - 該当日の勤怠ログを検索し、早出申請なら給与計算用出勤を実打刻で上書き、残業申請なら給与計算用退勤を実打刻で上書き
+ * - 申請のステータスを「承認済み」に更新
+ */
+export async function approveOvertimeRequest(requestId: string): Promise<void> {
+  // 1. 申請レコード取得
+  const reqPage = await notion.pages.retrieve({ page_id: requestId }) as any;
+  const employeeId   = reqPage.properties[F.OVERTIME_EMPLOYEE_REL]?.relation?.[0]?.id;
+  const applyDate    = reqPage.properties[F.APPLY_DATE]?.date?.start ?? "";
+  const earlyArrival = reqPage.properties[F.EARLY_REQUEST]?.checkbox ?? false;
+  const overtime     = reqPage.properties[F.OVERTIME_REQUEST]?.checkbox ?? false;
+
+  if (!applyDate) throw new Error("申請データが不正です（申請日なし）");
+  if (!employeeId) throw new Error("申請データが不正です（従業員リレーションなし）");
+
+  // 2. 該当日の勤怠ログレコードを検索
+  const logs = await notion.databases.query({
+    database_id: process.env.TIMELOG_DB_ID!,
+    filter: {
+      and: [
+        { property: F.EMPLOYEE_REL, relation: { contains: employeeId } },
+        { property: F.DATE, date: { equals: applyDate } },
+      ],
+    },
+  });
+  const logPage = (logs.results as any[])[0];
+  if (!logPage) throw new Error(`${applyDate} の勤怠ログが見つかりません`);
+
+  // 3. 給与計算用打刻を実打刻で上書き
+  const props: Record<string, any> = {};
+  if (earlyArrival) {
+    const actualClockIn = logPage.properties[F.CLOCK_IN]?.date?.start;
+    if (actualClockIn) props[F.PAYROLL_CLOCK_IN] = { date: { start: actualClockIn } };
+  }
+  if (overtime) {
+    const actualClockOut = logPage.properties[F.CLOCK_OUT]?.date?.start;
+    if (actualClockOut) props[F.PAYROLL_CLOCK_OUT] = { date: { start: actualClockOut } };
+  }
+  if (Object.keys(props).length > 0) {
+    await notion.pages.update({ page_id: logPage.id, properties: props });
+  }
+
+  // 4. 申請ステータスを更新
+  await notion.pages.update({
+    page_id: requestId,
+    properties: { [F.STATUS]: { status: { name: "承認済み" } } },
+  });
+}
+
+/** 時間外申請を却下（ステータス更新のみ） */
+export async function rejectOvertimeRequest(requestId: string): Promise<void> {
+  await notion.pages.update({
+    page_id: requestId,
+    properties: { [F.STATUS]: { status: { name: "却下" } } },
+  });
+}
+
 /** 時間外申請をNotionに書き込む */
 export async function createOvertimeRequest(data: {
-  employeeName: string;
+  employeePageId: string;
+  employeeName: string;     // タイトル生成用（DB列としては保存しない）
   applyDate: string;
   earlyArrival: boolean;
   earlyTime: string;
@@ -485,16 +644,16 @@ export async function createOvertimeRequest(data: {
   await notion.pages.create({
     parent: { database_id: process.env.OVERTIME_REQUEST_DB_ID! },
     properties: {
-      [F.TITLE]:            { title: [{ text: { content: title } }] },
-      [F.EMPLOYEE_NAME]:    { rich_text: [{ text: { content: data.employeeName } }] },
-      [F.APPLY_DATE]:       { date: { start: data.applyDate } },
-      [F.EARLY_REQUEST]:    { checkbox: data.earlyArrival },
-      [F.EARLY_TIME]:       { rich_text: [{ text: { content: data.earlyTime } }] },
-      [F.EARLY_REASON]:     { rich_text: [{ text: { content: data.earlyReason } }] },
-      [F.OVERTIME_REQUEST]: { checkbox: data.overtime },
-      [F.OVERTIME_TIME]:    { rich_text: [{ text: { content: data.overtimeTime } }] },
-      [F.OVERTIME_REASON]:  { rich_text: [{ text: { content: data.overtimeReason } }] },
-      [F.STATUS]:           { status: { name: "未対応" } },
+      [F.TITLE]:                 { title: [{ text: { content: title } }] },
+      [F.OVERTIME_EMPLOYEE_REL]: { relation: [{ id: data.employeePageId }] },
+      [F.APPLY_DATE]:            { date: { start: data.applyDate } },
+      [F.EARLY_REQUEST]:         { checkbox: data.earlyArrival },
+      [F.EARLY_TIME]:            { rich_text: [{ text: { content: data.earlyTime } }] },
+      [F.EARLY_REASON]:          { rich_text: [{ text: { content: data.earlyReason } }] },
+      [F.OVERTIME_REQUEST]:      { checkbox: data.overtime },
+      [F.OVERTIME_TIME]:         { rich_text: [{ text: { content: data.overtimeTime } }] },
+      [F.OVERTIME_REASON]:       { rich_text: [{ text: { content: data.overtimeReason } }] },
+      [F.STATUS]:                { status: { name: "未対応" } },
     },
   });
 }
@@ -508,10 +667,11 @@ export type MonthlyRecord = {
   actualHours: number | null;  // 実働（Notion formula）
   workStatus: string;  // 勤務状態
   note: string;        // 備考
-  approved: boolean;   // 承認
+  approved: boolean;   // 既存の承認フラグ（月単位承認用に温存）
+  requestStatus: "" | "承認待ち" | "承認済";  // 時間外申請の状況
 };
 
-/** 指定月の勤怠レコードを全件取得 */
+/** 指定月の勤怠レコードを全件取得（時間外申請ステータス join 済み） */
 export async function getMonthlyRecords(
   employeePageId: string,
   year: number,
@@ -522,6 +682,30 @@ export async function getMonthlyRecords(
   const lastDay = new Date(year, month, 0).getDate();
   const endDate = `${year}-${pad(month)}-${pad(lastDay)}`;
   const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+  // 同月の時間外申請を従業員リレーションで絞り込み取得 → 日付別にステータスをマップ化
+  const requestStatusByDate = new Map<string, "承認待ち" | "承認済">();
+  try {
+    const reqResponse = await notion.databases.query({
+      database_id: process.env.OVERTIME_REQUEST_DB_ID!,
+      filter: {
+        and: [
+          { property: F.OVERTIME_EMPLOYEE_REL, relation: { contains: employeePageId } },
+          { property: F.APPLY_DATE, date: { on_or_after: startDate } },
+          { property: F.APPLY_DATE, date: { on_or_before: endDate } },
+        ],
+      },
+    });
+    for (const p of reqResponse.results as any[]) {
+      const date = p.properties[F.APPLY_DATE]?.date?.start ?? "";
+      const status = p.properties[F.STATUS]?.status?.name ?? "";
+      if (!date || status === "却下") continue;
+      if (status === "承認済み") requestStatusByDate.set(date, "承認済");
+      else if (status === "未対応") {
+        if (!requestStatusByDate.has(date)) requestStatusByDate.set(date, "承認待ち");
+      }
+    }
+  } catch {}
 
   const response = await notion.databases.query({
     database_id: process.env.TIMELOG_DB_ID!,
@@ -543,8 +727,8 @@ export async function getMonthlyRecords(
     };
 
     const date = page.properties[F.DATE]?.date?.start ?? "";
-    const clockIn = toJstTime(page.properties[F.CLOCK_IN]?.date?.start);
-    const clockOut = toJstTime(page.properties[F.CLOCK_OUT]?.date?.start);
+    const clockIn = toJstTime(page.properties[F.PAYROLL_CLOCK_IN]?.date?.start);
+    const clockOut = toJstTime(page.properties[F.PAYROLL_CLOCK_OUT]?.date?.start);
     const breakRaw = page.properties[F.BREAK];
     const breakVal = breakRaw?.select?.name
       ?? (breakRaw?.number != null ? String(breakRaw.number) : null)
@@ -556,7 +740,8 @@ export async function getMonthlyRecords(
     const approved = page.properties[F.APPROVED]?.select?.name === "承認済み"
       || page.properties[F.APPROVED]?.checkbox === true;
 
-    return { id: page.id, date, clockIn, clockOut, break: breakVal, actualHours, workStatus, note, approved };
+    const requestStatus = requestStatusByDate.get(date) ?? "";
+    return { id: page.id, date, clockIn, clockOut, break: breakVal, actualHours, workStatus, note, approved, requestStatus };
   });
 }
 
@@ -618,12 +803,12 @@ export async function updateMonthlyRecord(
   }
 
   if (updates.clockIn !== undefined) {
-    props[F.CLOCK_IN] = updates.clockIn
+    props[F.PAYROLL_CLOCK_IN] = updates.clockIn
       ? { date: { start: new Date(`${date}T${updates.clockIn}:00+09:00`).toISOString() } }
       : { date: null };
   }
   if (updates.clockOut !== undefined) {
-    props[F.CLOCK_OUT] = updates.clockOut
+    props[F.PAYROLL_CLOCK_OUT] = updates.clockOut
       ? { date: { start: new Date(`${date}T${updates.clockOut}:00+09:00`).toISOString() } }
       : { date: null };
   }
@@ -719,6 +904,25 @@ function resolveNow(mockTime?: string): Date {
   return now;
 }
 
+/**
+ * 従業員ページから所属店舗の給与計算設定（標準時刻・休憩時間）を取得
+ * 取得できなければ null（=丸めなし・休憩はデフォルト2.5h扱い）
+ */
+async function getEmployeePayrollContext(
+  employeePageId: string
+): Promise<{ startTime: string; endTime: string; breakHours: number } | null> {
+  try {
+    const empPage = await notion.pages.retrieve({ page_id: employeePageId }) as any;
+    const storeRelId = empPage.properties[F.DEPARTMENT]?.relation?.[0]?.id;
+    if (!storeRelId) return null;
+    const settings = await getPayrollSettings(storeRelId);
+    if (!settings.startTime || !settings.endTime) return null;
+    return { startTime: settings.startTime, endTime: settings.endTime, breakHours: settings.breakHours };
+  } catch {
+    return null;
+  }
+}
+
 /** 出勤打刻：新規レコードを作成 */
 export async function registerClockIn(
   pageId: string,
@@ -746,14 +950,19 @@ export async function registerClockIn(
   );
   if (alreadyIn) throw new Error("ALREADY_CLOCKED_IN");
 
+  // 標準時刻を取得して給与計算用打刻を計算
+  const ctx = await getEmployeePayrollContext(pageId);
+  const payrollClockIn = ctx ? roundClockIn(now, ctx.startTime) : now;
+
   await notion.pages.create({
     parent: { database_id: process.env.TIMELOG_DB_ID! },
     properties: {
-      [F.TITLE]:        { title: [{ text: { content: `${dateStr} ${employeeName}` } }] },
-      [F.EMPLOYEE_REL]: { relation: [{ id: pageId }] },
-      [F.DATE]:         { date: { start: dateStr } },
-      [F.CLOCK_IN]:     { date: { start: now.toISOString() } },
-      [F.WORK_STATUS]:  { select: { name: "出勤" } },
+      [F.TITLE]:             { title: [{ text: { content: `${dateStr} ${employeeName}` } }] },
+      [F.EMPLOYEE_REL]:      { relation: [{ id: pageId }] },
+      [F.DATE]:              { date: { start: dateStr } },
+      [F.CLOCK_IN]:          { date: { start: now.toISOString() } },
+      [F.PAYROLL_CLOCK_IN]:  { date: { start: payrollClockIn.toISOString() } },
+      [F.WORK_STATUS]:       { select: { name: "出勤" } },
     },
   });
 }
@@ -786,11 +995,17 @@ export async function registerClockOut(
   );
   if (!target) throw new Error("ALREADY_CLOCKED_OUT");
 
+  // 標準時刻と休憩時間を取得して給与計算用退勤・休憩を決定
+  const ctx = await getEmployeePayrollContext(pageId);
+  const payrollClockOut = ctx ? roundClockOut(now, ctx.endTime) : now;
+  const breakHours = ctx ? ctx.breakHours : 2.5;
+
   await notion.pages.update({
     page_id: target.id,
     properties: {
-      [F.CLOCK_OUT]: { date: { start: now.toISOString() } },
-      [F.BREAK]:     { number: 2.5 },
+      [F.CLOCK_OUT]:          { date: { start: now.toISOString() } },
+      [F.PAYROLL_CLOCK_OUT]:  { date: { start: payrollClockOut.toISOString() } },
+      [F.BREAK]:              { number: breakHours },
     },
   });
 }

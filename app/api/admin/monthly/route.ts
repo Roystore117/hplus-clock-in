@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getMonthlyRecords } from "@/lib/notion";
+import { isAdminAuthenticated } from "@/lib/adminAuth";
 
 export async function GET(req: NextRequest) {
-  const cookieStore = await cookies();
-  if (cookieStore.get("admin_token")?.value !== process.env.ADMIN_PASSWORD) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 

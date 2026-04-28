@@ -37,7 +37,7 @@ function ApplyForm() {
     ? { type: "退勤" as const, timeStr: checkoutTime }
     : [...punches].reverse().find((p) => p.type === "退勤");
 
-  const canSubmit = !submitting &&
+  const canSubmit = !submitting && !!employeeId &&
     ((earlyCheck && earlyReason.trim() !== "") ||
      (overtimeCheck && overtimeReason.trim() !== ""));
 
@@ -54,6 +54,7 @@ function ApplyForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          employeePageId: employeeId,
           employeeName: name,
           applyDate,
           earlyArrival: earlyCheck,
